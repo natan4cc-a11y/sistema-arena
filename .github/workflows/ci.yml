@@ -1,0 +1,27 @@
+name: Testes Arena Bar 🍻
+
+on:
+  push:
+    branches: [ main ] # Roda sempre que você enviar para a main
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixando o Código
+        uses: actions/checkout@v4
+
+      - name: Instalando o Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Instalando Dependências
+        run: npm install
+
+      - name: Executando Testes da Arena
+        run: npm test -- --run # O --run faz o Vitest rodar uma vez e fechar
