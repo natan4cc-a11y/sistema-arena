@@ -1,119 +1,157 @@
 "use client"
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../../lib/supabase';
-import { Users, Trash2, Shield, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Users, Trash2, Shield, ArrowLeft, UserPlus, Lock } from 'lucide-react';
 import Link from 'next/link';
 
-interface Funcionario {
-  id: number;
-  nome_completo: string;
-  cargo: string;
-  senha?: string;
-}
+// Mantendo suas importações originais de Service e Types
+import { cadastroService } from '../../services/cadastroService';
+import { Funcionario } from '../../types';
 
 export default function CadastroEquipe() {
   const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [nome, setNome] = useState('');
   const [cargo, setCargo] = useState('Garçom');
   const [senha, setSenha] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  // Função auxiliar para os BOTÕES (Salvar/Excluir) chamarem
-  async function atualizarLista() {
-    const { data } = await supabase.from('funcionarios').select('*');
-    if (data) setFuncionarios(data);
-  }
-
-  // Efeito Inicial: Carrega os dados assim que a tela abre
-  // Definimos a função AQUI DENTRO para o ESLint não reclamar de dependências externas
-  useEffect(() => {
-    const carregarInicial = async () => {
-      const { data } = await supabase.from('funcionarios').select('*');
-      if (data) setFuncionarios(data);
-    };
-    
-    carregarInicial();
+  // FUNÇÃO QUE BUSCA OS DADOS NO SERVICE
+  const atualizarLista = useCallback(async () => {
+    try {
+      const dados = await cadastroService.getFuncionarios();
+      setFuncionarios(dados);
+    } catch (error) {
+      console.error("Erro ao carregar equipe:", error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  // EFEITO INICIAL CORRIGIDO (Evita cascading renders)
+  useEffect(() => {
+    let montado = true;
+    if (montado) {
+      atualizarLista();
+    }
+    return () => { montado = false; };
+  }, [atualizarLista]);
 
   async function handleCadastro(e: React.FormEvent) {
     e.preventDefault();
     if (!nome || !senha) return;
     
-    await supabase.from('funcionarios').insert([{ nome_completo: nome, cargo, senha }]);
-    setNome(''); setSenha(''); 
+    // CHAMA O SERVICE PARA SALVAR
+    await cadastroService.cadastrarFuncionario(nome, cargo, senha);
     
-    atualizarLista(); // Chama a função de atualização
-    alert('Funcionário cadastrado!');
+    setNome(''); 
+    setSenha(''); 
+    atualizarLista(); 
+    alert('Funcionário cadastrado com sucesso na Arena!');
   }
 
   async function handleDeletar(id: number) {
-    if(!confirm("Remover este funcionário?")) return;
-    await supabase.from('funcionarios').delete().eq('id', id);
+    if(!confirm("Remover este integrante da equipe?")) return;
     
-    atualizarLista(); // Chama a função de atualização
+    await cadastroService.deletarFuncionario(id);
+    atualizarLista(); 
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 p-6 text-slate-100 border-t-4 border-amber-500">
-      <div className="max-w-4xl mx-auto">
+    <div className="min-h-screen bg-black text-[#EAE4D3] p-6 font-sans">
+      <div className="max-w-5xl mx-auto">
         
-        <div className="flex items-center gap-4 mb-8 border-b border-slate-800 pb-6">
-          <Link href="/" className="p-2 bg-slate-800 rounded-full hover:bg-slate-700 border border-slate-700 group">
-            <ArrowLeft className="text-amber-500 group-hover:-translate-x-1 transition" />
+        {/* HEADER ARENA */}
+        <header className="flex items-center gap-4 mb-10 border-b border-white/5 pb-8">
+          <Link href="/" className="p-3 bg-[#1a1a1a] rounded-2xl text-[#f97316] hover:scale-110 transition border border-white/5 shadow-xl">
+            <ArrowLeft size={24} />
           </Link>
           <div>
-            <h1 className="text-2xl font-black text-amber-50 flex items-center gap-2 uppercase tracking-tight">
-              <Users className="text-amber-500" /> Equipe Arena
+            <h1 className="text-2xl font-black uppercase italic leading-none text-white flex items-center gap-3">
+              EQUIPE <span className="text-[#f97316]">ARENA</span>
             </h1>
-            <p className="text-slate-400">Gestão de Funcionários</p>
+            <p className="text-[9px] tracking-[0.3em] opacity-30 uppercase font-bold mt-1">Gestão de Acessos e Funcionários</p>
           </div>
-        </div>
+        </header>
 
-        {/* Formulário */}
-        <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 shadow-xl mb-8">
-            <h2 className="text-lg font-bold text-amber-50 mb-4">Novo Membro</h2>
-            <form onSubmit={handleCadastro} className="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+        {/* Formulário de Novo Membro */}
+        <div className="bg-[#1a1a1a] p-8 rounded-[2.5rem] border border-white/5 shadow-2xl mb-12">
+            <h2 className="text-sm font-black uppercase italic text-[#f97316] mb-6 tracking-widest flex items-center gap-2">
+               <UserPlus size={18} /> Novo Integrante
+            </h2>
+            
+            <form onSubmit={handleCadastro} className="grid grid-cols-1 md:grid-cols-4 gap-6 items-end">
                 <div className="md:col-span-1">
-                    <label className="text-xs text-slate-400 uppercase tracking-wider block mb-1">Nome</label>
-                    <input value={nome} onChange={e=>setNome(e.target.value)} className="w-full bg-slate-900 border border-slate-600 p-3 rounded-lg focus:border-amber-500 outline-none text-white"/>
+                    <label className="text-[10px] font-black uppercase opacity-30 tracking-widest block mb-2">Nome Completo</label>
+                    <input 
+                      value={nome} 
+                      onChange={e => setNome(e.target.value.toUpperCase())} 
+                      placeholder="NOME DO MEMBRO"
+                      className="w-full bg-black border border-white/10 p-4 rounded-2xl text-white font-bold focus:border-[#f97316] outline-none transition uppercase text-xs"
+                    />
                 </div>
                 <div className="md:col-span-1">
-                    <label className="text-xs text-slate-400 uppercase tracking-wider block mb-1">Cargo</label>
-                    <select value={cargo} onChange={e=>setCargo(e.target.value)} className="w-full bg-slate-900 border border-slate-600 p-3 rounded-lg focus:border-amber-500 outline-none text-white">
+                    <label className="text-[10px] font-black uppercase opacity-30 tracking-widest block mb-2">Função</label>
+                    <select 
+                      value={cargo} 
+                      onChange={e => setCargo(e.target.value)} 
+                      className="w-full bg-black border border-white/10 p-4 rounded-2xl text-white font-bold focus:border-[#f97316] outline-none transition text-xs appearance-none cursor-pointer"
+                    >
                         <option>Garçom</option>
                         <option>Cozinha</option>
                         <option>Caixa/Admin</option>
                     </select>
                 </div>
                 <div className="md:col-span-1">
-                    <label className="text-xs text-slate-400 uppercase tracking-wider block mb-1">Senha</label>
-                    <input type="text" value={senha} onChange={e=>setSenha(e.target.value)} className="w-full bg-slate-900 border border-slate-600 p-3 rounded-lg focus:border-amber-500 outline-none text-white"/>
+                    <label className="text-[10px] font-black uppercase opacity-30 tracking-widest block mb-2 flex items-center gap-1">
+                      <Lock size={12} /> Senha de Acesso
+                    </label>
+                    <input 
+                      type="password" 
+                      value={senha} 
+                      onChange={e => setSenha(e.target.value)} 
+                      placeholder="****"
+                      className="w-full bg-black border border-white/10 p-4 rounded-2xl text-white font-bold focus:border-[#f97316] outline-none transition text-xs"
+                    />
                 </div>
-                <button type="submit" className="bg-blue-600 hover:bg-blue-500 text-white font-bold p-3 rounded-lg transition h-full shadow-lg">
+                <button 
+                  type="submit" 
+                  className="bg-[#f97316] hover:bg-[#ea580c] text-white font-black p-4 rounded-2xl transition shadow-lg shadow-orange-900/20 uppercase text-xs tracking-widest active:scale-95"
+                >
                     CADASTRAR
                 </button>
             </form>
         </div>
 
-        {/* Lista */}
+        {/* Lista de Funcionários */}
+        <h2 className="text-[10px] font-black uppercase opacity-20 mb-4 tracking-[0.4em] px-4">Integrantes Atuais</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {funcionarios.map(f => (
-                <div key={f.id} className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center group hover:border-amber-500/50 transition">
+            {loading ? (
+              <div className="col-span-full text-center py-10 opacity-20 font-black uppercase tracking-widest animate-pulse italic">Carregando Staff...</div>
+            ) : (
+              funcionarios.map(f => (
+                <div key={f.id} className="bg-[#1a1a1a] p-6 rounded-3xl border border-white/5 flex justify-between items-center group hover:border-[#f97316]/30 transition-all shadow-xl">
                     <div className="flex items-center gap-4">
-                        <div className={`p-3 rounded-full ${f.cargo === 'Caixa/Admin' ? 'bg-amber-500/20 text-amber-500' : 'bg-blue-500/20 text-blue-400'}`}>
-                            {f.cargo === 'Caixa/Admin' ? <Shield size={20}/> : <Users size={20}/>}
+                        <div className={`p-4 rounded-2xl ${f.cargo === 'Caixa/Admin' ? 'bg-[#f97316]/10 text-[#f97316]' : 'bg-white/5 text-white/40'}`}>
+                            {f.cargo === 'Caixa/Admin' ? <Shield size={24}/> : <Users size={24}/>}
                         </div>
                         <div>
-                            <p className="font-bold text-slate-200">{f.nome_completo}</p>
-                            <p className="text-xs text-slate-500 uppercase tracking-wide">{f.cargo}</p>
+                            <p className="font-black text-white uppercase italic text-sm">{f.nome_completo}</p>
+                            <p className="text-[9px] text-[#f97316] font-black uppercase tracking-widest mt-1 opacity-60">{f.cargo}</p>
                         </div>
                     </div>
-                    <button onClick={() => handleDeletar(f.id)} className="text-slate-600 hover:text-red-500 p-2 transition">
+                    <button 
+                      onClick={() => handleDeletar(f.id)} 
+                      className="text-white/10 hover:text-red-500 p-3 transition rounded-xl hover:bg-red-500/10"
+                    >
                         <Trash2 size={20} />
                     </button>
                 </div>
-            ))}
+              ))
+            )}
         </div>
 
+        <footer className="mt-20 opacity-10 text-[9px] font-black tracking-[1em] text-center uppercase pb-10">
+          Arena Bar • Controle de Equipe
+        </footer>
       </div>
     </div>
   );

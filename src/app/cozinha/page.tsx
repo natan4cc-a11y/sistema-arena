@@ -1,103 +1,160 @@
 "use client"
 import React, { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../../lib/supabase';
-import { ChefHat, Clock, CheckCircle, RefreshCw, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
+import { ArrowLeft, Clock, CheckCircle2, UtensilsCrossed, Timer, RotateCcw } from 'lucide-react';
 
-interface Pedido {
+interface PedidoCozinha {
   id: number;
   id_mesa: number;
   nome_produto: string;
+  quantidade: number;
+  observacao: string;
   horario: string;
-  status: string;
-  observacao?: string;
+  status_preparo: 'pendente' | 'preparando' | 'pronto';
 }
 
-export default function TelaCozinha() {
-  const [pedidos, setPedidos] = useState<Pedido[]>([]);
+export default function CozinhaPage() {
+  const [pedidos, setPedidos] = useState<PedidoCozinha[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchPedidos = useCallback(async () => {
-    const { data } = await supabase
-      .from('pedidos_mesa')
-      .select('*')
-      .eq('status', 'pendente') 
-      .order('horario', { ascending: true });
-    if (data) setPedidos(data);
-    setLoading(false);
+  // Carrega apenas itens que não foram entregues ainda
+  const carregarPedidos = useCallback(async () => {
+    try {
+      const { data, error } = await supabase
+        .from('pedidos_mesa')
+        .select('*')
+        .neq('status_preparo', 'pronto')
+        .order('horario', { ascending: true });
+
+      if (error) throw error;
+      if (data) setPedidos(data);
+    } catch (err) {
+      console.error("Erro Cozinha:", err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    // Definimos uma função assíncrona interna para evitar o erro de cascading render
-    const inicializarCozinha = async () => {
-      await fetchPedidos();
-    };
+    let montado = true;
+    if (montado) {
+      carregarPedidos();
+      
+      // Realtime: Atualiza a cozinha automaticamente quando houver novo pedido
+      const canal = supabase
+        .channel('cozinha_arena')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos_mesa' }, () => {
+          carregarPedidos();
+        })
+        .subscribe();
 
-    inicializarCozinha();
-    
-    const intervalo = setInterval(() => {
-      fetchPedidos();
-    }, 5000);
+      return () => {
+        supabase.removeChannel(canal);
+      };
+    }
+    return () => { montado = false; };
+  }, [carregarPedidos]);
 
-    return () => clearInterval(intervalo);
-  }, [fetchPedidos]);
+  async function alterarStatus(id: number, novoStatus: 'preparando' | 'pronto') {
+    const { error } = await supabase
+      .from('pedidos_mesa')
+      .update({ status_preparo: novoStatus })
+      .eq('id', id);
 
-  async function marcarComoPronto(id: number) {
-    setPedidos(current => current.filter(p => p.id !== id));
-    await supabase.from('pedidos_mesa').update({ status: 'pronto' }).eq('id', id);
-    fetchPedidos();
+    if (!error) carregarPedidos();
   }
 
-  const pedidosPorMesa = pedidos.reduce((acc: Record<number, Pedido[]>, pedido) => {
-    if (!acc[pedido.id_mesa]) acc[pedido.id_mesa] = [];
-    acc[pedido.id_mesa].push(pedido);
-    return acc;
-  }, {} as Record<number, Pedido[]>);
+  // Função para calcular há quanto tempo o pedido foi feito
+  const calcularEspera = (horario: string) => {
+    const inicio = new Date(horario).getTime();
+    const agora = new Date().getTime();
+    const minutos = Math.floor((agora - inicio) / 60000);
+    return minutos;
+  };
 
   return (
-    <div className="min-h-screen bg-slate-900 p-4 text-slate-100 border-t-4 border-amber-500">
-      <div className="flex justify-between items-center mb-8 border-b border-slate-800 pb-4">
+    <div className="min-h-screen bg-black text-[#EAE4D3] p-6 font-sans">
+      
+      {/* HEADER DA COZINHA */}
+      <header className="max-w-6xl mx-auto flex items-center justify-between mb-10">
         <div className="flex items-center gap-4">
-          <Link href="/" className="p-2 bg-slate-800 rounded-full hover:bg-slate-700 border border-slate-700 transition">
-            <ArrowLeft className="text-amber-500" />
+          <Link href="/" className="p-3 bg-[#1a1a1a] rounded-2xl text-[#f97316] hover:scale-110 transition border border-white/5 shadow-xl">
+            <ArrowLeft size={24} />
           </Link>
-          <h1 className="text-3xl font-black text-amber-50 flex items-center gap-2 uppercase tracking-tighter"><ChefHat className="text-amber-500" /> COZINHA ARENA</h1>
+          <div>
+            <h1 className="text-2xl font-black uppercase italic leading-none">COZINHA <span className="text-[#f97316]">ARENA</span></h1>
+            <p className="text-[9px] tracking-[0.3em] opacity-30 uppercase font-bold mt-1">Controle de Produção • Tempo Real</p>
+          </div>
         </div>
-        <button onClick={fetchPedidos} className="p-3 bg-amber-500 text-slate-900 rounded-lg hover:scale-105 transition font-bold shadow-[0_0_15px_rgba(245,158,11,0.4)]"><RefreshCw size={24} /></button>
-      </div>
+        <button onClick={carregarPedidos} className="p-3 bg-[#1a1a1a] text-[#f97316] rounded-2xl border border-white/5 active:rotate-180 transition-all duration-500">
+            <RotateCcw size={20} />
+        </button>
+      </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        {Object.keys(pedidosPorMesa).length === 0 && !loading ? (
-           <div className="col-span-full text-center py-20 opacity-30 flex flex-col items-center">
-             <ChefHat size={80} className="mb-4 text-slate-500"/>
-             <p className="text-2xl font-bold text-slate-500 uppercase">Sem pedidos no momento</p>
-           </div>
+      {/* GRID DE PEDIDOS */}
+      <main className="max-w-6xl mx-auto">
+        {loading ? (
+          <div className="text-center py-20 opacity-20 font-black uppercase tracking-[0.5em] animate-pulse">Sincronizando Pedidos...</div>
+        ) : pedidos.length === 0 ? (
+          <div className="text-center py-32 bg-[#1a1a1a] rounded-[3rem] border border-dashed border-white/10">
+             <UtensilsCrossed size={48} className="mx-auto mb-4 opacity-10" />
+             <p className="font-black uppercase text-xs tracking-[0.3em] opacity-20">Nenhum pedido pendente na cozinha</p>
+          </div>
         ) : (
-          Object.keys(pedidosPorMesa).map((mesaId) => (
-            <div key={mesaId} className="bg-slate-800 rounded-xl border-t-4 border-amber-500 shadow-xl overflow-hidden">
-              <div className="bg-slate-950 p-4 flex justify-between items-center border-b border-slate-700">
-                <h2 className="text-2xl font-black text-amber-50 font-bold uppercase">MESA {mesaId}</h2>
-                <Clock size={20} className="text-amber-500 animate-pulse" />
-              </div>
-              <div className="p-4 space-y-4">
-                {pedidosPorMesa[Number(mesaId)].map((item) => (
-                  <div key={item.id} className="bg-slate-900 p-3 rounded-lg border border-slate-700 flex flex-col gap-2">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-lg text-amber-50 uppercase tracking-tight">{item.nome_produto}</span>
-                      <button onClick={() => marcarComoPronto(item.id)} className="bg-green-600 hover:bg-green-500 text-white p-2 rounded-lg shadow-lg transition"><CheckCircle size={22} /></button>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {pedidos.map((item) => (
+              <div 
+                key={item.id} 
+                className={`bg-[#1a1a1a] p-8 rounded-[2.5rem] border transition-all flex flex-col justify-between ${
+                  item.status_preparo === 'preparando' ? 'border-[#f97316] shadow-[0_0_20px_rgba(249,115,22,0.1)]' : 'border-white/5'
+                }`}
+              >
+                <div>
+                  <div className="flex justify-between items-start mb-6">
+                    <span className="bg-black text-[#f97316] px-4 py-1.5 rounded-xl font-black text-xs italic">MESA {item.id_mesa}</span>
+                    <div className="flex items-center gap-2 opacity-40">
+                      <Timer size={14} />
+                      <span className="text-[10px] font-black uppercase tracking-widest">{calcularEspera(item.horario)} MIN</span>
                     </div>
-                    {item.observacao && (
-                      <div className="bg-amber-500/10 border-l-4 border-amber-500 p-2 rounded">
-                        <p className="text-xs text-amber-500 font-black uppercase italic">Atenção: {item.observacao}</p>
-                      </div>
-                    )}
                   </div>
-                ))}
+
+                  <h3 className="text-2xl font-black uppercase italic text-white mb-2 leading-tight">{item.nome_produto}</h3>
+                  
+                  {item.observacao && (
+                    <div className="bg-black/40 p-4 rounded-2xl border border-white/5 mb-6">
+                       <p className="text-[9px] font-black text-[#f97316] uppercase tracking-widest mb-1 opacity-50 italic">Observação:</p>
+                       <p className="text-xs font-bold text-[#EAE4D3] uppercase">{item.observacao}</p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-3 mt-4">
+                  {item.status_preparo === 'pendente' ? (
+                    <button 
+                      onClick={() => alterarStatus(item.id, 'preparando')}
+                      className="w-full bg-[#1a1a1a] border border-[#f97316]/30 text-[#f97316] p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-[#f97316] hover:text-white transition active:scale-95"
+                    >
+                      <Clock size={16} /> Iniciar Preparo
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => alterarStatus(item.id, 'pronto')}
+                      className="w-full bg-green-600 text-white p-4 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-green-500 transition shadow-lg shadow-green-900/20 active:scale-95"
+                    >
+                      <CheckCircle2 size={16} /> Finalizar Pedido
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ))
+            ))}
+          </div>
         )}
-      </div>
+      </main>
+
+      <footer className="mt-20 opacity-10 text-[9px] font-black tracking-[1em] text-center uppercase pb-10">
+        Arena Bar • Cozinha Integrada
+      </footer>
     </div>
   );
 }
