@@ -1,6 +1,6 @@
 "use client"
 import React, { useState, useEffect, useCallback } from 'react';
-import { Clock, RotateCcw, X, Receipt, ArrowLeft, Users, Utensils, CreditCard, Check } from 'lucide-react';
+import { RotateCcw, X, ArrowLeft, Utensils, CreditCard, Check } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { supabase } from '@/lib/supabase';
@@ -37,7 +37,7 @@ export default function MapaMesas() {
   const [obsAtual, setObsAtual] = useState('');
   const [numPessoas, setNumPessoas] = useState(1);
   
-  // 🌟 NOVO ESTADO: ITENS SELECIONADOS PARA PAGAMENTO PARCIAL
+  // NOVO ESTADO: ITENS SELECIONADOS PARA PAGAMENTO PARCIAL
   const [selecionados, setSelecionados] = useState<number[]>([]);
 
   const carregarDados = useCallback(async () => {
@@ -98,12 +98,12 @@ export default function MapaMesas() {
     carregarDados(); 
   }
 
-  // 🌟 FUNÇÃO PARA SELECIONAR/DESELECIONAR ITEM
+  // FUNÇÃO PARA SELECIONAR/DESELECIONAR ITEM
   function toggleSelecao(id: number) {
     setSelecionados(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   }
 
-  // 🌟 FUNÇÃO PARA PAGAR MÚLTIPLOS ITENS SELECIONADOS
+  // FUNÇÃO PARA PAGAR MÚLTIPLOS ITENS SELECIONADOS
   async function handlePagamentoSelecionados() {
     if (!mesaSelecionada || selecionados.length === 0) return;
 
