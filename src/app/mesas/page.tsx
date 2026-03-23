@@ -3,30 +3,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { RotateCcw, X, ArrowLeft, Utensils, CreditCard, Check } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { supabase } from '@/lib/supabase';
 
-interface Mesa {
-  id: number;
-  status: 'livre' | 'ocupada' | 'conta';
-  cliente: string | null;
-  total: number;
-}
-
-interface Produto {
-  id: number;
-  nome: string;
-  preco: number;
-  categoria: 'bebida' | 'comida';
-  estoque_atual: number;
-}
-
-interface ItemPedido {
-  id: number;
-  nome_produto: string;
-  preco: number;
-  horario: string;
-  observacao?: string;
-}
+// IMPORTANDO DO ARQUIVO CENTRAL
+import { Mesa, Produto, ItemPedido } from '@/types';
+import { mesasService } from '@/services/mesasService';
 
 export default function MapaMesas() {
   const [mesas, setMesas] = useState<Mesa[]>([]);
@@ -35,17 +15,16 @@ export default function MapaMesas() {
   const [mesaSelecionada, setMesaSelecionada] = useState<Mesa | null>(null);
   const [itensDaMesa, setItensDaMesa] = useState<ItemPedido[]>([]); 
   const [obsAtual, setObsAtual] = useState('');
-  const [numPessoas, setNumPessoas] = useState(1);
-  
-  // NOVO ESTADO: ITENS SELECIONADOS PARA PAGAMENTO PARCIAL
   const [selecionados, setSelecionados] = useState<number[]>([]);
 
   const carregarDados = useCallback(async () => {
     try {
-      const { data: dadosMesas } = await supabase.from('mesas').select('*').order('id', { ascending: true });
-      if (dadosMesas) setMesas(dadosMesas);
-      const { data: dadosProdutos } = await supabase.from('produtos').select('*').order('nome', { ascending: true });
-      if (dadosProdutos) setProdutos(dadosProdutos);
+      setLoading(true);
+      // Puxando do Service
+      const dadosMesas = await mesasService.getMesas();
+      const dadosProdutos = await mesasService.getProdutos();
+      setMesas(dadosMesas);
+      setProdutos(dadosProdutos);
     } catch (error) {
       console.error("Erro Arena:", error);
     } finally {
@@ -60,15 +39,14 @@ export default function MapaMesas() {
   }, [carregarDados]);
 
   async function carregarItensDaMesa(idMesa: number) {
-    const { data } = await supabase.from('pedidos_mesa').select('*').eq('id_mesa', idMesa).order('horario', { ascending: false });
-    if (data) setItensDaMesa(data);
-    setSelecionados([]); // Limpa seleção ao mudar de mesa
+    const data = await mesasService.getItensDaMesa(idMesa);
+    setItensDaMesa(data);
+    setSelecionados([]); 
   }
 
   function handleClickMesa(mesa: Mesa) {
     if (mesa.status === 'ocupada') {
         setMesaSelecionada(mesa);
-        setNumPessoas(1);
         carregarItensDaMesa(mesa.id);
     }
   }
@@ -77,8 +55,8 @@ export default function MapaMesas() {
     e.stopPropagation();
     const nomeCliente = prompt("NOME DO CLIENTE:");
     if (!nomeCliente) return;
-    await supabase.from('mesas').update({ status: 'ocupada', cliente: nomeCliente, total: 0 }).eq('id', id);
-    await supabase.from('pedidos_mesa').delete().eq('id_mesa', id);
+    
+    await mesasService.abrirMesa(id, nomeCliente);
     carregarDados();
   }
 
@@ -86,11 +64,12 @@ export default function MapaMesas() {
     if (!mesaSelecionada) return;
     if (produto.estoque_atual <= 0) return alert("⚠️ ESTOQUE ESGOTADO!");
 
-    await supabase.from('pedidos_mesa').insert([{ id_mesa: mesaSelecionada.id, nome_produto: produto.nome, preco: produto.preco, observacao: obsAtual }]);
-    await supabase.rpc('decrement_estoque', { row_id: produto.id });
-
-    const novoTotal = (mesaSelecionada.total || 0) + produto.preco;
-    await supabase.from('mesas').update({ total: novoTotal }).eq('id', mesaSelecionada.id);
+    const novoTotal = await mesasService.adicionarPedido(
+      mesaSelecionada.id, 
+      produto, 
+      obsAtual, 
+      mesaSelecionada.total || 0
+    );
     
     setObsAtual('');
     setMesaSelecionada({ ...mesaSelecionada, total: novoTotal });
@@ -98,12 +77,10 @@ export default function MapaMesas() {
     carregarDados(); 
   }
 
-  // FUNÇÃO PARA SELECIONAR/DESELECIONAR ITEM
   function toggleSelecao(id: number) {
     setSelecionados(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   }
 
-  // FUNÇÃO PARA PAGAR MÚLTIPLOS ITENS SELECIONADOS
   async function handlePagamentoSelecionados() {
     if (!mesaSelecionada || selecionados.length === 0) return;
 
@@ -113,40 +90,29 @@ export default function MapaMesas() {
     if (!confirm(`PAGAR R$ ${totalParcial.toFixed(2)} REFERENTE A ${selecionados.length} ITENS?`)) return;
 
     try {
-      // 1. Envia para vendas
-      await supabase.from('vendas').insert([{ 
-        cliente: `${mesaSelecionada.cliente} (Parcial)`, 
-        total: totalParcial, 
-        itens: itensParaPagar.map(i => ({ nome: i.nome_produto, preco: i.preco })) 
-      }]);
-
-      // 2. Remove da mesa
-      await supabase.from('pedidos_mesa').delete().in('id', selecionados);
-
-      // 3. Atualiza mesa
-      const novoTotalMesa = Math.max(0, (mesaSelecionada.total || 0) - totalParcial);
-      await supabase.from('mesas').update({ total: novoTotalMesa }).eq('id', mesaSelecionada.id);
-
+      const novoTotalMesa = await mesasService.pagamentoParcial(mesaSelecionada, itensParaPagar, selecionados);
+      
       setMesaSelecionada({ ...mesaSelecionada, total: novoTotalMesa });
       carregarItensDaMesa(mesaSelecionada.id);
       carregarDados();
       alert("PAGAMENTO PARCIAL REALIZADO!");
     } catch (err) {
       console.error(err);
+      alert("Erro ao realizar pagamento.");
     }
   }
 
   async function handleLiberarMesa() {
     if (!mesaSelecionada) return;
     if(!confirm(`FECHAR CONTA TOTAL?`)) return;
-    const { data: itensFinais } = await supabase.from('pedidos_mesa').select('nome_produto, preco').eq('id_mesa', mesaSelecionada.id);
-    await supabase.from('vendas').insert([{ cliente: mesaSelecionada.cliente, total: mesaSelecionada.total, itens: itensFinais }]);
-    await supabase.from('pedidos_mesa').delete().eq('id_mesa', mesaSelecionada.id);
-    await supabase.from('mesas').update({ status: 'livre', cliente: null, total: 0 }).eq('id', mesaSelecionada.id);
+    
+    await mesasService.fecharMesa(mesaSelecionada);
+    
     setMesaSelecionada(null);
     carregarDados();
   }
 
+  // O RETORNO DO HTML (JSX) CONTINUA EXATAMENTE IGUAL O SEU, POIS JÁ ESTAVA ÓTIMO!
   return (
     <div className="min-h-screen bg-black text-[#EAE4D3] p-6 font-sans">
       <header className="max-w-6xl mx-auto flex justify-between items-center mb-10">

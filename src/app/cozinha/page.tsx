@@ -2,16 +2,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { ChefHat, Clock, CheckCircle2, RotateCcw, ArrowLeft, UtensilsCrossed } from 'lucide-react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
 
-interface PedidoCozinha {
-  id: number;
-  id_mesa: number;
-  nome_produto: string;
-  observacao: string;
-  horario: string;
-  status: 'pendente' | 'preparando' | 'entregue';
-}
+// IMPORTANDO DO ARQUIVO CENTRAL E DO SEU SERVICE:
+import { PedidoCozinha } from '@/types';
+import { cozinhaService } from '@/services/cozinhaService';
 
 export default function CozinhaPage() {
   const [pedidos, setPedidos] = useState<PedidoCozinha[]>([]);
@@ -20,22 +14,11 @@ export default function CozinhaPage() {
   const carregarPedidos = useCallback(async () => {
     try {
       setLoading(true);
-      // 🧐 BUSCANDO PEDIDOS PENDENTES DA ARENA
-      const { data, error } = await supabase
-        .from('pedidos_mesa')
-        .select('*')
-        // Se você não tiver a coluna 'status', remova o filtro abaixo temporariamente
-        // .order('horario', { ascending: true }); 
-      
-      if (error) {
-        // 🚨 LOG DETALHADO PARA RESOLVER O ERRO {}
-        console.error("Erro detalhado do Supabase:", error.message, error.details, error.hint);
-        throw error;
-      }
-
-      if (data) setPedidos(data);
-    } catch (error: any) {
-      console.error("Erro Cozinha:", error.message || error);
+      // Puxando do Service
+      const data = await cozinhaService.buscarPedidosPendentes();
+      setPedidos(data);
+    } catch (error) {
+      console.error("Erro Cozinha:", error);
     } finally {
       setLoading(false);
     }
@@ -43,27 +26,32 @@ export default function CozinhaPage() {
 
   useEffect(() => {
     carregarPedidos();
-    // ⚡ Realtime: Atualiza a cozinha sozinho quando o garçom lança o pedido
-    const channel = supabase
-      .channel('schema-db-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pedidos_mesa' }, () => {
+    
+    // Liga o Radar pelo Service
+    const channel = cozinhaService.inscreverAtualizacoes(() => {
         carregarPedidos();
-      })
-      .subscribe();
+    });
 
-    return () => { supabase.removeChannel(channel); };
+    // Desliga o Radar ao fechar a página
+    return () => { 
+        cozinhaService.removerInscricao(channel); 
+    };
   }, [carregarPedidos]);
 
   async function finalizarPedido(id: number) {
-    // Aqui você pode deletar o pedido da cozinha ou mudar o status
-    const { error } = await supabase.from('pedidos_mesa').delete().eq('id', id);
-    if (!error) carregarPedidos();
+    try {
+        // Usa o Service para marcar como pronto
+        await cozinhaService.marcarComoPronto(id);
+        carregarPedidos();
+    } catch  {
+        alert("Erro ao finalizar. Tente de novo.");
+    }
   }
 
+  // O VISUAL (HTML/JSX) CONTINUA EXATAMENTE O MESMO QUE VOCÊ FEZ!
   return (
     <div className="min-h-screen bg-black text-[#EAE4D3] p-6 font-sans">
       
-      {/* HEADER ARENA COZINHA */}
       <header className="max-w-6xl mx-auto flex justify-between items-center mb-10">
         <div className="flex items-center gap-4">
           <Link href="/" className="p-3 bg-[#1a1a1a] rounded-2xl text-[#f97316] hover:scale-110 transition border border-white/5">
@@ -77,14 +65,14 @@ export default function CozinhaPage() {
              </div>
           </div>
         </div>
-        <button onClick={carregarPedidos} className="p-3 bg-[#1a1a1a] text-[#f97316] rounded-2xl hover:rotate-180 transition-all duration-500">
+        <button onClick={carregarPedidos} className="p-3 bg-[#1a1a1a] text-[#f97316] rounded-2xl hover:rotate-180 transition-all duration-500 border border-white/5">
             <RotateCcw size={20} />
         </button>
       </header>
 
       <main className="max-w-6xl mx-auto">
         {loading ? (
-          <div className="text-center py-20 opacity-20 font-black uppercase tracking-widest animate-pulse">CHEF PREPARANDO...</div>
+          <div className="text-center py-20 opacity-20 font-black uppercase tracking-widest animate-pulse italic">CHEF PREPARANDO...</div>
         ) : pedidos.length === 0 ? (
           <div className="text-center py-20 flex flex-col items-center opacity-10">
             <UtensilsCrossed size={64} />
@@ -94,7 +82,6 @@ export default function CozinhaPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {pedidos.map((pedido) => (
               <div key={pedido.id} className="bg-[#1a1a1a] border border-white/5 rounded-[2.5rem] p-6 flex flex-col gap-4 relative overflow-hidden group">
-                {/* Indicador de Mesa */}
                 <div className="flex justify-between items-start">
                   <span className="bg-[#f97316] text-black px-4 py-1 rounded-full text-xs font-black italic">MESA {pedido.id_mesa}</span>
                   <div className="flex items-center gap-1 text-white/20 text-[10px] font-bold">

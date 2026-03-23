@@ -9,7 +9,7 @@ export interface Produto {
   id: number;
   nome: string;
   preco: number;
-  categoria: 'bebida' | 'comida';
+  categoria: 'bebida' | 'comida' | 'petisco' | 'dose';
   estoque_atual: number;
 }
 

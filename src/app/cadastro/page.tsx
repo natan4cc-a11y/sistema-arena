@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Users, Trash2, Shield, ArrowLeft, UserPlus, Lock } from 'lucide-react';
 import Link from 'next/link';
 
-// Mantendo suas importações originais de Service e Types
+// Mantendo suas importações originais
 import { cadastroService } from '../../services/cadastroService';
 import { Funcionario } from '../../types';
 
@@ -14,52 +14,61 @@ export default function CadastroEquipe() {
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // FUNÇÃO QUE BUSCA OS DADOS NO SERVICE
+  // BUSCANDO OS DADOS
   const atualizarLista = useCallback(async () => {
     try {
+      setLoading(true);
       const dados = await cadastroService.getFuncionarios();
       setFuncionarios(dados);
     } catch (error) {
-      console.error("Erro ao carregar equipe:", error);
+      const msg = error instanceof Error ? error.message : "Erro desconhecido";
+      console.error("Erro ao carregar equipe:", msg);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // EFEITO INICIAL CORRIGIDO (Evita cascading renders)
   useEffect(() => {
-    let montado = true;
-    if (montado) {
-      atualizarLista();
-    }
-    return () => { montado = false; };
+    atualizarLista();
   }, [atualizarLista]);
 
+  // FUNÇÃO DE CADASTRO CORRIGIDA
   async function handleCadastro(e: React.FormEvent) {
     e.preventDefault();
-    if (!nome || !senha) return;
+    if (!nome || !senha) {
+        alert("Preencha o nome e a senha!");
+        return;
+    }
     
-    // CHAMA O SERVICE PARA SALVAR
-    await cadastroService.cadastrarFuncionario(nome, cargo, senha);
-    
-    setNome(''); 
-    setSenha(''); 
-    atualizarLista(); 
-    alert('Funcionário cadastrado com sucesso na Arena!');
+    try {
+      // 🧐 Verifique se no seu 'cadastroService' os argumentos estão nessa ordem!
+      await cadastroService.cadastrarFuncionario(nome, cargo, senha);
+      
+      setNome(''); 
+      setSenha(''); 
+      await atualizarLista(); 
+      alert('✅ Funcionário cadastrado com sucesso na Arena!');
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Erro desconhecido";
+      alert("Erro ao cadastrar: " + msg);
+    }
   }
 
   async function handleDeletar(id: number) {
     if(!confirm("Remover este integrante da equipe?")) return;
     
-    await cadastroService.deletarFuncionario(id);
-    atualizarLista(); 
+    try {
+      await cadastroService.deletarFuncionario(id);
+      atualizarLista(); 
+    } catch {
+      alert("Erro ao deletar.");
+    }
   }
 
   return (
     <div className="min-h-screen bg-black text-[#EAE4D3] p-6 font-sans">
       <div className="max-w-5xl mx-auto">
         
-        {/* HEADER ARENA */}
         <header className="flex items-center gap-4 mb-10 border-b border-white/5 pb-8">
           <Link href="/" className="p-3 bg-[#1a1a1a] rounded-2xl text-[#f97316] hover:scale-110 transition border border-white/5 shadow-xl">
             <ArrowLeft size={24} />
@@ -72,7 +81,6 @@ export default function CadastroEquipe() {
           </div>
         </header>
 
-        {/* Formulário de Novo Membro */}
         <div className="bg-[#1a1a1a] p-8 rounded-[2.5rem] border border-white/5 shadow-2xl mb-12">
             <h2 className="text-sm font-black uppercase italic text-[#f97316] mb-6 tracking-widest flex items-center gap-2">
                <UserPlus size={18} /> Novo Integrante
@@ -95,9 +103,9 @@ export default function CadastroEquipe() {
                       onChange={e => setCargo(e.target.value)} 
                       className="w-full bg-black border border-white/10 p-4 rounded-2xl text-white font-bold focus:border-[#f97316] outline-none transition text-xs appearance-none cursor-pointer"
                     >
-                        <option>Garçom</option>
-                        <option>Cozinha</option>
-                        <option>Caixa/Admin</option>
+                        <option value="Garçom">Garçom</option>
+                        <option value="Cozinha">Cozinha</option>
+                        <option value="Caixa/Admin">Caixa/Admin</option>
                     </select>
                 </div>
                 <div className="md:col-span-1">
@@ -121,7 +129,6 @@ export default function CadastroEquipe() {
             </form>
         </div>
 
-        {/* Lista de Funcionários */}
         <h2 className="text-[10px] font-black uppercase opacity-20 mb-4 tracking-[0.4em] px-4">Integrantes Atuais</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {loading ? (
@@ -134,7 +141,7 @@ export default function CadastroEquipe() {
                             {f.cargo === 'Caixa/Admin' ? <Shield size={24}/> : <Users size={24}/>}
                         </div>
                         <div>
-                            <p className="font-black text-white uppercase italic text-sm">{f.nome_completo}</p>
+                           <p className="font-black text-white uppercase italic text-sm">{f.nome_completo}</p>
                             <p className="text-[9px] text-[#f97316] font-black uppercase tracking-widest mt-1 opacity-60">{f.cargo}</p>
                         </div>
                     </div>
@@ -148,10 +155,6 @@ export default function CadastroEquipe() {
               ))
             )}
         </div>
-
-        <footer className="mt-20 opacity-10 text-[9px] font-black tracking-[1em] text-center uppercase pb-10">
-          Arena Bar • Controle de Equipe
-        </footer>
       </div>
     </div>
   );

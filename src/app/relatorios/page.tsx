@@ -1,26 +1,16 @@
 "use client"
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
 import { ArrowLeft, TrendingUp, DollarSign, Package, ChevronRight, AlertCircle } from 'lucide-react';
 
-interface ItemVenda {
-  nome_produto: string;
-  preco: number;
-}
-
-interface Venda {
-  id: number;
-  created_at: string;
-  cliente: string;
-  total: number;
-  itens: ItemVenda[];
-}
+// IMPORTANDO DO ARQUIVO CENTRAL E DO SERVICE:
+import { Venda } from '@/types';
+import { relatoriosService, PeriodoRelatorio } from '@/services/relatoriosService';
 
 export default function RelatoriosPage() {
   const [vendas, setVendas] = useState<Venda[]>([]);
   const [loading, setLoading] = useState(true);
-  const [periodo, setPeriodo] = useState<'hoje' | 'semana' | 'mes' | 'todos'>('hoje');
+  const [periodo, setPeriodo] = useState<PeriodoRelatorio>('hoje');
   const [erro, setErro] = useState<string | null>(null);
 
   const buscarVendas = useCallback(async () => {
@@ -28,30 +18,12 @@ export default function RelatoriosPage() {
       setLoading(true);
       setErro(null);
       
-      let query = supabase.from('vendas').select('*');
-      const agora = new Date();
-      const dataInicio = new Date();
-
-      if (periodo === 'hoje') {
-        dataInicio.setHours(0, 0, 0, 0);
-        query = query.gte('created_at', dataInicio.toISOString());
-      } else if (periodo === 'semana') {
-        dataInicio.setDate(agora.getDate() - 7);
-        query = query.gte('created_at', dataInicio.toISOString());
-      } else if (periodo === 'mes') {
-        dataInicio.setMonth(agora.getMonth() - 1);
-        query = query.gte('created_at', dataInicio.toISOString());
-      }
-
-      const { data, error } = await query.order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setVendas((data as Venda[]) || []);
+      // Chamando a lógica que agora mora no Service!
+      const data = await relatoriosService.getVendasPorPeriodo(periodo);
+      setVendas(data);
 
     } catch (err: unknown) {
-      // 🌟 CORREÇÃO: Removido o 'any' e adicionado tratamento seguro de erro
-      const msg = err instanceof Error ? err.message : "Erro desconhecido no banco";
-      console.error("Erro Arena Financeiro:", msg);
+      const msg = err instanceof Error ? err.message : "Erro de conexão com o banco Arena.";
       setErro(msg);
     } finally {
       setLoading(false);
@@ -62,9 +34,11 @@ export default function RelatoriosPage() {
     buscarVendas();
   }, [buscarVendas]);
 
+  // Cálculos visuais rápidos
   const totalFaturado = vendas.reduce((acc, v) => acc + (v.total || 0), 0);
   const ticketMedio = vendas.length > 0 ? totalFaturado / vendas.length : 0;
 
+  // O VISUAL (HTML/JSX) CONTINUA EXATAMENTE IGUAL O SEU!
   return (
     <div className="min-h-screen bg-black text-[#EAE4D3] p-6 font-sans">
       <header className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
@@ -78,8 +52,14 @@ export default function RelatoriosPage() {
           </div>
         </div>
         <div className="flex bg-[#1a1a1a] p-1.5 rounded-2xl border border-white/5 shadow-2xl">
-            {(['hoje', 'semana', 'mes', 'todos'] as const).map((p) => (
-                <button key={p} onClick={() => setPeriodo(p)} className={`px-5 py-2.5 rounded-xl text-[10px] font-black transition-all uppercase ${periodo === p ? 'bg-[#f97316] text-white' : 'text-white/40 hover:text-white'}`}>{p}</button>
+            {(['hoje', 'semana', 'mes', 'todos'] as PeriodoRelatorio[]).map((p) => (
+                <button 
+                  key={p} 
+                  onClick={() => setPeriodo(p)} 
+                  className={`px-5 py-2.5 rounded-xl text-[10px] font-black transition-all uppercase ${periodo === p ? 'bg-[#f97316] text-white' : 'text-white/40 hover:text-white'}`}
+                >
+                  {p}
+                </button>
             ))}
         </div>
       </header>
@@ -123,14 +103,18 @@ export default function RelatoriosPage() {
               <tbody className="divide-y divide-white/5">
                 {loading ? (
                    <tr><td colSpan={4} className="p-20 text-center opacity-20 font-black uppercase tracking-widest animate-pulse italic">Carregando Arena...</td></tr>
+                ) : vendas.length === 0 ? (
+                   <tr><td colSpan={4} className="p-20 text-center opacity-30 font-black uppercase tracking-widest italic">Nenhuma venda neste período</td></tr>
                 ) : (
                   vendas.map((venda) => (
                     <tr key={venda.id} className="hover:bg-white/[0.02] transition group">
                       <td className="p-8 text-xs font-bold opacity-60">
-                        {new Date(venda.created_at).toLocaleDateString('pt-BR')} 
-                        <span className="opacity-30 ml-2 font-normal text-[10px]">{new Date(venda.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                       {new Date(venda.data_venda).toLocaleDateString('pt-BR')} 
+                       <span className="opacity-30 ml-2 font-normal text-[10px]">
+                         {new Date(venda.data_venda).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                       </span>
                       </td>
-                      <td className="p-8 font-black uppercase italic text-sm">{venda.cliente || 'CONSUMIDOR'}</td>
+                     <td className="p-8 font-black uppercase italic text-sm">{venda.cliente || 'CONSUMIDOR'}</td>
                       <td className="p-8 text-right font-black text-[#f97316] text-lg italic tracking-tighter">R$ {venda.total.toFixed(2)}</td>
                       <td className="p-8 text-center">
                         <button className="p-2 bg-black rounded-xl border border-white/10 hover:border-[#f97316] transition group">
